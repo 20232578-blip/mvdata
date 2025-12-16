@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영화 정보 UI 구현</title>
+<!-- 폰트 -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- 아이콘 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- WordCloud2.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
+
+<style>
+    /* --- 기본 설정 --- */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Noto Sans KR', sans-serif; color: #333; background-color: #fff; }
+    
+    /* --- [New] 인트로 화면 (Before) --- */
+    #intro-screen {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100vh;
+        background-color: #f5f5f5; /* 배경색 */
+        z-index: 9999; /* 최상위 배치 */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .intro-content {
+        text-align: center;
+        max-width: 980px;
+        width: 100%;
+        background: #fff;
+        padding: 40px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+
+    .intro-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 10px;
+        color: #333;
+    }
+    
+    .intro-desc {
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 30px;
+    }
+
+    .intro-image-box {
+        width: 100%;
+        max-height: 500px; /* 너무 길어지지 않게 제한 */
+        overflow: hidden;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        position: relative;
+    }
+    
+    /* 이미지 하단에 그라데이션을 주어 자연스럽게 잘린 느낌 */
+    .intro-image-box::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; width: 100%; height: 100px;
+        background: linear-gradient(to top, #fff, transparent);
+    }
+
+    .intro-img {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+
+    .next-step-btn {
+        background: #FF243E;
+        color: #fff;
+        font-size: 18px;
+        font-weight: 700;
+        padding: 15px 50px;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(255, 36, 62, 0.3);
+        transition: all 0.3s ease;
+        animation: pulse 2s infinite;
+    }
+
+    .next-step-btn:hover {
+        background: #d91028;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 36, 62, 0.4);
+    }
+
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 36, 62, 0.4); }
+        70% { box-shadow: 0 0 0 15px rgba(255, 36, 62, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 36, 62, 0); }
+    }
+
+
+    /* --- 메인 컨테이너 (초기에는 숨김) --- */
+    #main-ui { 
+        display: none; /* 인트로 후 보여짐 */
+        width: 100%; 
+        flex-direction: column; 
+        align-items: center; 
+        animation: slideUp 0.8s ease-out;
+    }
+
+    @keyframes slideUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* --- 상단 고정 헤더 이미지 --- */
+    .header-image-wrapper {
+        top: 0; z-index: 1000;
+        width: 100%; background-color: #fff;
+        display: flex; justify-content: center;
+        border-bottom: 1px solid #eee;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .header-image { width: 100%; max-width: 980px; height: auto; display: block; }
+
+    /* --- 상단 탭 --- */
+    .tab-nav { width: 100%; display: flex; justify-content: center; border-bottom: 1px solid #e0e0e0; background-color: #fff; }
+    .tab-inner { width: 100%; max-width: 980px; display: flex; }
+    .tab-item { flex: 1; text-align: center; padding: 14px 0; font-size: 15px; color: #888; cursor: pointer; letter-spacing: -0.5px; }
+    .tab-item.active { color: #000; font-weight: 700; border-bottom: 2px solid #000; margin-bottom: -1px; }
+
+    /* --- 콘텐츠 영역 --- */
+    .content-area { width: 100%; background-color: #f8f8f8; padding: 40px 0 100px 0; display: flex; justify-content: center; border-top: 1px solid #e0e0e0; margin-top: -1px; min-height: 600px; }
+    .content-inner { width: 100%; max-width: 980px; padding: 0 20px; }
+    
+    h2.section-title { font-size: 20px; font-weight: 700; margin-bottom: 18px; color: #000; letter-spacing: -0.5px; }
+
+    /* --- 상세정보 뷰 --- */
+    #detail-view { display: block; }
+    
+    /* 정보 리스트 */
+    .info-list { list-style: none; font-size: 14px; line-height: 2.0; letter-spacing: -0.2px; margin-bottom: 40px; }
+    .info-list li { display: flex; align-items: flex-start; margin-bottom: 2px; }
+    .label { color: #666; width: 50px; display: flex; align-items: center; font-weight: 400; margin-right: 10px; }
+    .label::before { content: '·'; margin-right: 4px; font-weight: bold; color: #999; }
+    .value { color: #333; flex: 1; }
+    .link-text { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #ccc; cursor: pointer; transition: color 0.2s; }
+    .link-text:hover { color: #000; text-decoration-color: #000; }
+    .separator { margin: 0 2px; color: #333; display: inline-block; }
+
+    /* --- AI Dashboard Styles --- */
+    .ai_dashboard { 
+        display: block; /* 항상 보이도록 변경 */
+        margin-top: 20px; 
+        background-color: #fff; 
+        border-radius: 12px; 
+        padding: 30px; 
+        box-shadow: 0 2px 10px rgba(0,0,0,0.03); 
+    }
+    
+    .ai_header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px; }
+    .ai_title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .ai_badge { background: #000; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; vertical-align: middle; }
+    .dash_row { display: flex; gap: 20px; }
+    .dash_card { flex: 1; background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 20px; position: relative; min-width: 0; display: flex; flex-direction: column; }
+    
+    /* Score Card */
+    .dash_card.score { align-items: center; text-align: center; background: #fff; border: 1px solid #eee; color: #333; position: relative; overflow: hidden; justify-content: flex-start; }
+    .score_label { width: 100%; text-align: left; font-size: 14px; font-weight: 700; color: #333; margin-bottom: 15px; letter-spacing: -0.5px; position: relative; z-index: 2; height: 24px; display: flex; align-items: center; }
+    .score_label i { margin-right: 6px; color: #FF243E; }
+    
+    /* Circular Progress */
+    .score-circle { position: relative; width: 160px; height: 160px; border-radius: 50%; background: conic-gradient(#FF243E 0% 58%, #eee 58% 100%); display: flex; align-items: center; justify-content: center; margin: auto 0; }
+    .score-circle::before { content: ''; position: absolute; width: 136px; height: 136px; background: #fff; border-radius: 50%; }
+    
+    .score-text-wrap { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+    .score_val { font-size: 42px; font-weight: 800; color: #333; margin-bottom: 0; }
+    .score_val span { font-size: 16px; color: #999; font-weight: 500; margin-left: 2px; }
+
+    .tag_box { display: flex; gap: 8px; position: relative; z-index: 2; margin-top: -20px; margin-bottom: 10px; }
+    .tag_box span { background: #f5f5f5; color: #555; font-size: 13px; padding: 6px 14px; border-radius: 20px; font-weight: 700; }
+
+    /* Chart Common */
+    .chart_tit { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 14px; font-weight: 700; color: #333; width: 100%; height: 24px; }
+    .chart_tit i { margin-right: 6px; color: #FF243E; }
+    .radar_btns { width: 100%; display: flex; justify-content: center; gap: 8px; margin-top: 15px; }
+    .radar_btns button { flex: 1; max-width: 100px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 0; font-size: 12px; cursor: pointer; color: #777; font-family: 'Noto Sans KR', sans-serif; transition: all 0.2s; }
+    .radar_btns button:hover { background: #eee; }
+    .radar_btns button.on { background: #333; color: #fff; border-color: #333; font-weight: 700; }
+    .radar-summary { margin-top: 12px; padding: 10px 12px; background: #fdfdfd; border: 1px solid #eee; border-radius: 6px; font-size: 12px; color: #555; text-align: center; line-height: 1.4; letter-spacing: -0.3px; }
+
+    /* [New] 하단 이미지 영역 */
+    .footer-image-wrapper {
+        margin-top: 20px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+    .footer-image {
+        width: 100%;
+        max-width: 980px;
+        height: auto;
+        display: block;
+        opacity: 0.7; /* 하단 이미지는 약간 흐리게 처리하여 구분 */
+    }
+
+    /* --- 관람평 뷰 --- */
+    #review-view { display: none; }
+    .review-wordcloud-box { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+    #cloud-wrapper { width: 100%; height: 200px; position: relative; }
+    .comment-write-box { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px 20px; margin-bottom: 30px; display: flex; gap: 15px; align-items: flex-start; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+    .comment-input-area { flex: 1; display: flex; flex-direction: column; }
+    .comment-textarea { width: 100%; height: 60px; border: none; resize: none; font-size: 14px; font-family: 'Noto Sans KR', sans-serif; outline: none; padding: 5px 0; color: #333; }
+    .comment-textarea::placeholder { color: #bbb; }
+    .comment-btn { width: 90px; height: 70px; background-color: #FF243E; color: #fff; border: none; border-radius: 4px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background-color 0.2s; }
+    .comment-btn:hover { background-color: #d91028; }
+    .review-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
+    .total-count { font-size: 15px; font-weight: 700; color: #000; }
+    .total-count span { color: #FF243E; }
+    .sort-opts { display: flex; gap: 15px; font-size: 13px; color: #888; }
+    .sort-item { cursor: pointer; }
+    .sort-item.active { color: #000; font-weight: 700; }
+    .review-list { list-style: none; }
+    .review-item { background: #fff; padding: 25px 0; border-bottom: 1px solid #eee; display: flex; flex-direction: column; gap: 12px; }
+    .review-top { display: flex; align-items: center; gap: 8px; }
+    .stars { color: #FF243E; font-size: 16px; letter-spacing: -1px; }
+    .score-num { font-weight: 800; font-size: 15px; color: #000; margin-left: 2px; }
+    .review-body { font-size: 15px; line-height: 1.6; color: #333; word-break: break-all; }
+    .review-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999; }
+    .meta-left { display: flex; gap: 10px; align-items: center; }
+    .user-id { color: #555; }
+    .bar { color: #ddd; }
+    .like-btn { background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 5px 12px; font-size: 12px; color: #666; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s; }
+    .like-btn:hover { border-color: #bbb; color: #333; }
+    .like-btn i { color: #999; font-size: 13px; }
+    .like-btn.on i { color: #FF243E; }
+    .like-btn.on { border-color: #FF243E; color: #FF243E; }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .tab-inner, .content-inner { width: 100%; padding: 0 16px; }
+        .tab-item { font-size: 14px; padding: 12px 0; }
+        .dash_row { flex-direction: column; gap: 15px; }
+        .ai_header { flex-direction: column; align-items: flex-start; gap: 5px; }
+        .dash_card.score { padding: 30px 20px; }
+        .comment-write-box { flex-direction: column; align-items: stretch; }
+        .comment-btn { width: 100%; height: 50px; }
+        .ai-trigger-box { padding: 60px 20px; }
+        .intro-content { padding: 20px; }
+        .next-step-btn { padding: 12px 30px; font-size: 16px; }
+    }
+</style>
+</head>
+<body>
+
+<!-- 1. Intro Screen (Before) -->
+<div id="intro-screen">
+    <div class="intro-content">
+        <h1 class="intro-title">Before: 기존 영화 예매 사이트</h1>
+        <p class="intro-desc">익숙하지만, 리뷰를 하나씩 읽어봐야 하는 불편함이 있습니다.</p>
+        
+        <div class="intro-image-box">
+            <!-- 사용자가 업로드한 원본 스크린샷 이미지 -->
+            <img src="./부고니아 원본.png" alt="Before Screen" class="intro-img" onerror="this.src=''; this.alt='[이미지가 로드되지 않았습니다. 파일명을 확인해주세요]';">
+        </div>
+
+        <button class="next-step-btn" onclick="startExperience()">
+            다음: 개선된 화면 보기 <i class="fa-solid fa-arrow-right"></i>
+        </button>
+    </div>
+</div>
+
+<!-- 2. Main UI (After) - initially hidden -->
+<div id="main-ui" class="container">
+    <!-- 상단 고정 헤더 이미지 -->
+    <div class="header-image-wrapper">
+        <img src="./부고니아 상단.png" alt="Movie Header Image" class="header-image" onerror="this.style.backgroundColor='#eee'; this.style.height='200px'; this.alt='[이미지 로드 실패] 여기에 이미지가 표시됩니다.';">
+    </div>
+
+    <!-- 상단 탭 -->
+    <nav class="tab-nav">
+        <div class="tab-inner">
+            <div class="tab-item active" onclick="switchTab('detail', this)">상세정보</div>
+            <div class="tab-item" onclick="switchTab('review', this)">관람평 (1,165)</div>
+        </div>
+    </nav>
+
+    <!-- 콘텐츠 영역 -->
+    <section class="content-area">
+        <div class="content-inner">
+            
+            <!-- 1. 상세정보 뷰 -->
+            <div id="detail-view">
+                <h2 class="section-title">영화정보</h2>
+                <ul class="info-list">
+                    <li>
+                        <span class="label">장르</span>
+                        <span class="value">스릴러, 코미디 / 미국</span>
+                    </li>
+                    <li>
+                        <span class="label">감독</span>
+                        <span class="value">
+                            <span class="link-text">요르고스 란티모스</span>
+                        </span>
+                    </li>
+                    <li>
+                        <span class="label">출연</span>
+                        <span class="value">
+                            <span class="link-text">엠마 스톤</span><span class="separator">,</span> 
+                            <span class="link-text">제시 플레먼스</span><span class="separator">,</span> 
+                            <span class="link-text">에이든 델비스</span><span class="separator">,</span> 
+                            <span class="link-text">알리시아 실버스톤</span>
+                        </span>
+                    </li>
+                </ul>
+
+                <!-- [After] AI Dashboard (기본 노출) -->
+                <div id="ai-dashboard-area" class="ai_dashboard">
+                    <div class="ai_header">
+                        <div class="ai_title">
+                            <span class="ai_badge">BETA</span>Charlotte 리뷰 인사이트
+                        </div>
+                        <div style="font-size:12px; color:#999;">데이터 기준: 2025.12.15 23:59</div>
+                    </div>
+
+                    <div class="dash_row">
+                        <!-- Score Card -->
+                        <div class="dash_card score">
+                            <div class="score_label"><i class="fa-solid fa-star"></i> 실관람 평점</div>
+                            
+                            <div class="score-circle">
+                                <div class="score-text-wrap">
+                                    <div class="score_val">5.8<span>/10</span></div>
+                                </div>
+                            </div>
+
+                            <div class="tag_box">
+                                <span>긍정 우세</span>
+                                <span>영상미 호평</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Radar Chart -->
+                        <div class="dash_card">
+                            <div class="chart_tit">
+                                <span><i class="fa-solid fa-chart-pie"></i> 무비 스펙트럼 레이더</span>
+                            </div>
+                            <div style="height:180px; display:flex; justify-content:center; align-items:center;">
+                                <canvas id="spectrumChart"></canvas>
+                            </div>
+                            <div class="radar_btns">
+                                <button class="on" onclick="switchChart('aspect', this)">관람 포인트</button>
+                                <button onclick="switchChart('emotion', this)">감성 포인트</button>
+                            </div>
+                            <div id="radar-summary" class="radar-summary"></div>
+                        </div>
+                        
+                        <!-- Trend Chart -->
+                        <div class="dash_card">
+                            <div class="chart_tit">
+                                <span><i class="fa-solid fa-arrow-trend-up"></i> 일별 리뷰 추이</span>
+                                <span style="font-size:11px; color:#999; font-weight:400;">주요 날짜</span>
+                            </div>
+                            <div style="height:200px;">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- End AI Dashboard -->
+
+                <!-- [New] 대시보드 하단 웹사이트 이미지 -->
+                <div class="footer-image-wrapper">
+                    <img src="./부고니아 하단.png" alt="Website Footer Image" class="footer-image">
+                </div>
+
+            </div>
+
+            <!-- 2. 관람평 뷰 -->
+            <div id="review-view">
+                <div class="review-wordcloud-box">
+                    <div class="chart_tit" style="margin-bottom:10px;">
+                        <span><i class="fa-solid fa-quote-left"></i> 키워드 하이라이트</span>
+                    </div>
+                    <div id="cloud-wrapper">
+                        <canvas id="wordCloudCanvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="comment-write-box">
+                    <div class="comment-input-area">
+                        <textarea class="comment-textarea" placeholder="영화에 대한 솔직한 평을 남겨주세요."></textarea>
+                    </div>
+                    <button class="comment-btn">등록</button>
+                </div>
+
+                <div class="review-header-bar">
+                    <div class="total-count">총 <span>1,165</span>건</div>
+                    <div class="sort-opts">
+                        <div class="sort-item active">공감순</div>
+                        <div style="color:#ddd">|</div>
+                        <div class="sort-item">최신순</div>
+                    </div>
+                </div>
+
+                <ul class="review-list">
+                    <!-- Reviews... -->
+                    <li class="review-item">
+                        <div class="review-top">
+                            <div class="stars">★★★★★</div>
+                            <div class="score-num">10</div>
+                        </div>
+                        <div class="review-body">
+                            역시 요르고스 란티모스 감독! 엠마 스톤 연기 미쳤네요. 기괴하면서도 유머러스한 연출이 돋보였습니다. <br>특히 색감이 너무 예뻐서 눈이 즐거웠어요. 호불호는 갈릴 수 있겠지만 저는 극호!
+                        </div>
+                        <div class="review-meta">
+                            <div class="meta-left">
+                                <span class="user-id">movi****</span>
+                                <span class="bar">|</span>
+                                <span class="date">2025.12.16 09:30</span>
+                            </div>
+                            <button class="like-btn" onclick="toggleLike(this)">
+                                <i class="fa-regular fa-thumbs-up"></i>
+                                <span class="count">342</span>
+                            </button>
+                        </div>
+                    </li>
+                    <li class="review-item">
+                        <div class="review-top"><div class="stars">★★★★☆</div><div class="score-num">8</div></div>
+                        <div class="review-body">지구를 구하려는 주인공들의 여정이 흥미진진했습니다. 원작과는 또 다른 매력이 있네요.</div>
+                        <div class="review-meta"><div class="meta-left"><span class="user-id">cine****</span><span class="bar">|</span><span class="date">2025.12.15 22:15</span></div><button class="like-btn" onclick="toggleLike(this)"><i class="fa-regular fa-thumbs-up"></i><span class="count">128</span></button></div>
+                    </li>
+                    <li class="review-item">
+                        <div class="review-top"><div class="stars">★★★☆☆</div><div class="score-num">6</div></div>
+                        <div class="review-body">난해하다... 무슨 말을 하려는지 알겠는데 너무 빙빙 돌리는 느낌.</div>
+                        <div class="review-meta"><div class="meta-left"><span class="user-id">user****</span><span class="bar">|</span><span class="date">2025.12.15 18:40</span></div><button class="like-btn" onclick="toggleLike(this)"><i class="fa-regular fa-thumbs-up"></i><span class="count">56</span></button></div>
+                    </li>
+                    <li class="review-item">
+                        <div class="review-top"><div class="stars">★★★★★</div><div class="score-num">10</div></div>
+                        <div class="review-body">올해 최고의 영화! 영상미, 음악, 연기 삼박자가 완벽합니다.</div>
+                        <div class="review-meta"><div class="meta-left"><span class="user-id">gold****</span><span class="bar">|</span><span class="date">2025.12.15 14:20</span></div><button class="like-btn" onclick="toggleLike(this)"><i class="fa-regular fa-thumbs-up"></i><span class="count">89</span></button></div>
+                    </li>
+                </ul>
+            </div>
+
+        </div>
+    </section>
+</div>
+
+<!-- Scripts -->
+<script>
+    // --- 인트로 -> 메인 전환 ---
+    function startExperience() {
+        document.getElementById('intro-screen').style.display = 'none';
+        document.getElementById('main-ui').style.display = 'flex';
+        // 레이아웃 재계산 및 차트 초기화 (즉시 실행)
+        window.dispatchEvent(new Event('resize'));
+        setTimeout(initCharts, 100);
+    }
+
+    // --- 탭 전환 로직 ---
+    function switchTab(tabName, element) {
+        const tabs = document.querySelectorAll('.tab-item');
+        tabs.forEach(t => t.classList.remove('active'));
+        element.classList.add('active');
+
+        const detailView = document.getElementById('detail-view');
+        const reviewView = document.getElementById('review-view');
+
+        if (tabName === 'detail') {
+            detailView.style.display = 'block';
+            reviewView.style.display = 'none';
+            if (radarChart) setTimeout(() => radarChart.resize(), 100);
+        } else {
+            detailView.style.display = 'none';
+            reviewView.style.display = 'block';
+            setTimeout(() => drawWordCloud(), 100);
+        }
+    }
+
+    // --- 좋아요 토글 로직 ---
+    function toggleLike(btn) {
+        btn.classList.toggle('on');
+        const icon = btn.querySelector('i');
+        const countSpan = btn.querySelector('.count');
+        let count = parseInt(countSpan.innerText.replace(/,/g, ''));
+        if (btn.classList.contains('on')) {
+            icon.classList.remove('fa-regular'); icon.classList.add('fa-solid'); count++;
+        } else {
+            icon.classList.remove('fa-solid'); icon.classList.add('fa-regular'); count--;
+        }
+        countSpan.innerText = count.toLocaleString();
+    }
+
+    // --- 차트 데이터 ---
+    const keywords = [
+        { word: "영상미", weight: 150 }, { word: "부고니아", weight: 130 }, { word: "엠마스톤", weight: 125 }, 
+        { word: "OST", weight: 115 }, { word: "독창적", weight: 100 }, { word: "배우/연기", weight: 95 }, 
+        { word: "요르고스", weight: 90 }, { word: "미장센", weight: 85 }, { word: "스토리", weight: 80 }, 
+        { word: "신선함", weight: 75 }, { word: "충격적", weight: 70 }, { word: "지구를지켜라", weight: 65 }, 
+        { word: "색감", weight: 60 }, { word: "호불호", weight: 55 }, { word: "블랙코미디", weight: 50 }, 
+        { word: "감독/연출", weight: 45 }, { word: "결말", weight: 40 }, { word: "분위기", weight: 35 }
+    ];
+
+    const chartConfig = {
+        aspect: { labels: ['감독/연출', '배우/연기', '스토리', '영상미', 'OST'], data: [6.4, 7.5, 6.1, 10.0, 7.8] },
+        emotion: { labels: ['긴장감/공포', '자극/충격', '유머/재미', '감동/여운', '신선/독창'], data: [0.5, 3.1, 2.6, 1.9, 3.1] }
+    };
+
+    const summaryText = {
+        aspect: "압도적인 <span style='color:#FF243E'>영상미</span>와 <span style='color:#FF243E'>OST</span>, 배우들의 호연이 어우러진 시청각적 걸작",
+        emotion: "예측불가한 스토리와 <span style='color:#FF243E'>신선한 충격</span>이 주는 블랙코미디의 진수"
+    };
+
+    let radarChart = null;
+
+    // --- 워드클라우드 ---
+    function drawWordCloud() {
+        const cloudCv = document.getElementById('wordCloudCanvas');
+        const cloudWrap = document.getElementById('cloud-wrapper');
+        if (!cloudCv || !cloudWrap) return;
+        cloudCv.width = cloudWrap.offsetWidth;
+        cloudCv.height = cloudWrap.offsetHeight;
+        const highlightWords = ['영상미', '부고니아', 'OST', '독창적', '엠마스톤'];
+        WordCloud(cloudCv, {
+            list: keywords.map(k => [k.word, k.weight]),
+            gridSize: 16, weightFactor: function (size) { return Math.pow(size, 1.9) * cloudCv.width / 180000; },
+            fontFamily: 'Noto Sans KR', fontWeight: '700',
+            color: function (word, weight) { return highlightWords.includes(word) ? '#FF243E' : (Math.random() > 0.5 ? '#333' : '#666'); },
+            backgroundColor: 'transparent', rotateRatio: 0, shape: 'circle', shuffle: false
+        });
+    }
+
+    // --- 차트 초기화 (메인 UI 진입 시 실행) ---
+    function initCharts() {
+        // Trend Chart (Selected Dates)
+        const trendCtx = document.getElementById('trendChart');
+        if (trendCtx) {
+            new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: ['11.05', '11.07', '11.11', '11.13', '11.14', '11.17', '11.22', '11.23', '11.27', '11.30', '12.07', '12.15'],
+                    datasets: [{
+                        data: [76, 101, 44, 22, 43, 51, 13, 29, 11, 24, 15, 3],
+                        borderColor: '#FF243E', backgroundColor: 'rgba(255, 36, 62, 0.1)', fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor:'#fff', borderWidth: 2
+                    }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } }, 
+                    scales: { x: { grid: {display:false}, ticks: { font:{size:11}, maxTicksLimit: 6 } }, y: { display: false } } 
+                }
+            });
+        }
+        renderRadar('aspect');
+    }
+
+    function renderRadar(type) {
+        const ctx = document.getElementById('spectrumChart');
+        if (!ctx) return;
+        if (radarChart) {
+            radarChart.data.labels = chartConfig[type].labels;
+            radarChart.data.datasets[0].data = chartConfig[type].data;
+            radarChart.update();
+        } else {
+            radarChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: chartConfig[type].labels,
+                    datasets: [{
+                        data: chartConfig[type].data,
+                        backgroundColor: 'rgba(255, 36, 62, 0.2)', borderColor: '#FF243E', pointBackgroundColor: '#FF243E', borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { r: { angleLines: { color: '#eee' }, grid: { color: '#eee' }, pointLabels: { font: { size: 11, family: 'Noto Sans KR' }, color: '#333' }, ticks: { display: false, max: 10, beginAtZero: true } } },
+                    plugins: { legend: { display: false } },
+                    animation: { duration: 1000, easing: 'easeInOutQuart' }
+                }
+            });
+        }
+        const summaryEl = document.getElementById('radar-summary');
+        if (summaryEl && summaryText[type]) summaryEl.innerHTML = summaryText[type];
+    }
+
+    window.switchChart = function(type, btn) {
+        const btns = document.querySelectorAll('.radar_btns button');
+        btns.forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        renderRadar(type);
+    }
+
+    // onload: 차트 자동 실행 X (버튼 눌러야 실행)
+    window.onload = function() {
+        let resizeTimer;
+        window.onresize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (radarChart) radarChart.resize();
+                if (document.getElementById('review-view').style.display === 'block') {
+                    drawWordCloud();
+                }
+            }, 200);
+        };
+    };
+</script>
+</body>
+</html>
